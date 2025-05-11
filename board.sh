@@ -1,11 +1,9 @@
+#!/bin/bash
+
 clean_board() {
-    if [ -d board ]; then
-        cd board || return
-        rm -rf *
-        cd ..
-    else
-        echo "Directory 'board' does not exist."
-    fi
+    cd board || return
+    rm -rf *
+    cd ..
 }
 
 create_board_recursive() {
@@ -14,18 +12,19 @@ create_board_recursive() {
     local files=$3
 
     if [ "$depth" -le 0 ]; then
+        local i
         for ((i = 0; i < files; i++)); do
             touch "file_$i.txt"
         done
-        return
+    else
+        local i
+        for ((i = 0; i < width; i++)); do
+            mkdir "dir$i"
+            cd "dir$i"
+            create_board_recursive $((depth - 1)) "$width" "$files"
+            cd ..
+        done
     fi
-
-    for ((i = 0; i < width; i++)); do
-        mkdir "dir$i"
-        cd "dir$i" || return
-        create_board_recursive $((depth - 1)) "$width" "$files"
-        cd ..
-    done
 }
 
 create_board() {
@@ -35,6 +34,10 @@ create_board() {
     cd ..
 }
 
-clean_board
+if [ -d board ]; then
+    clean_board
+    echo "Cleaned existing board directory."
+fi
 
-create_board 2 3 2  # depth=2, width=3, files=2
+echo "Creating board directory..."
+create_board 3 2 4
