@@ -8,9 +8,9 @@ clean_board() {
 }
 
 create_board() {
-    local depth = $1
-    local width = $2
-    local files = $3
+    local depth=$1
+    local width=$2
+    local files=$3
 
     mkdir board
 
@@ -36,3 +36,7 @@ create_board() {
 
     cd .. || return
 }
+
+clean_board
+
+create_board
