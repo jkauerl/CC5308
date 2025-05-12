@@ -2,7 +2,7 @@
 
 random_text() {
     local length=$1
-    cat /dev/urandom | tr -dc 'a-Za-z0-9' | head -c "$length" 
+    cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c "$length" 
 }
 
 clean_board() {
@@ -58,10 +58,10 @@ fill_board() {
                 random_text "$length" > "$file"
 
                 if [ "$checksum" = true ]; then
-                    sha256sum "$file" > "$file.sha256"
+                    sha256sum "$file" > "$file"
                 fi
                 if [ "$encrypted" = true ]; then
-                    openssl enc -aes-256-cbc -salt -in "$file" -out "$file.enc" -k secret
+                    openssl enc -aes-256-cbc -salt -in "$file" -out "$file" -k secret
                 fi
                 if [ "$signed" = true ]; then
                     gpg --sign "$file"
@@ -84,4 +84,4 @@ echo "Creating board directory..."
 create_board 3 2 4
 
 echo "Filling board with random content..."
-fill_board "random_text" true true true true
+fill_board "random_text" false false false false
