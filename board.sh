@@ -75,6 +75,7 @@ fill_board() {
     cd ..
 }
 
+# Main script execution
 if [ -d board ]; then
     clean_board
     echo "Cleaned existing board directory."
