@@ -27,7 +27,8 @@ while true; do
     echo "Please enter a path to validate the treasure:"
     read -r path
     # Check if the path is the treasure path and if so exit the loop using the function verify
-    if verify "$t_name" "$t_content" "$t_checksum" "$t_encrypted" "$t_signed"; then
+    read p_name p_contenp p_checksum p_encrypted p_signed < < (verify "$path")
+    if [ "$p_name" = "$t_name" ] && [ "$p_content" = "$t_content" ] && [ "$p_checksum" = "$t_checksum" ] && [ "$p_encrypted" = "$t_encrypted" ] && [ "$p_signed" = "$t_signed" ]; then
         echo "Treasure found!"
         break
     else
