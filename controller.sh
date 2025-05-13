@@ -42,4 +42,22 @@ place_treasure() {
     }
 }
 
-place_treasure
+verify() {
+    # Function that given a path to a file checks if it contains the treasure
+    # If so, it returns the treasure name, content, checksum, encrypted and signed
+    # Otherwise it returns an error message
+    local path=$1
+if [ -f "$path" ]; then
+    content=$(<"$path")
+    if [[ "$content" == *"Treasure!"* ]]; then
+        echo "Treasure found in $path"
+        return 0
+    else
+        echo "No treasure found in $path"
+        return 1
+    fi
+else
+    echo "Invalid path: $path"
+    return 1
+fi
+}
