@@ -74,15 +74,3 @@ fill_board() {
     fill_recursive
     cd ..
 }
-
-# Main script execution
-if [ -d board ]; then
-    clean_board
-    echo "Cleaned existing board directory."
-fi
-
-echo "Creating board directory..."
-create_board 3 2 4
-
-echo "Filling board with random content..."
-fill_board "random_text" false false false false
