@@ -21,16 +21,34 @@ echo "Filling board with random content..."
 fill_board "$name" "$content" "$checksum" "$encrypted" "$signed"
 
 echo "Placing treasure randomly..."
-read t_name t_content t_checksum t_encrypted t_signed < < (place_treasure)
+declare -a treasure_info
+place_treasure treasure_info
+
+t_name=${treasure_info[0]}
+t_content=${treasure_info[1]}
+t_checksum=${treasure_info[2]}
+t_encrypted=${treasure_info[3]}
+t_signed=${treasure_info[4]}
 
 while true; do
     echo "Please enter a path to validate the treasure:"
     read -r path
-    # Check if the path is the treasure path and if so exit the loop using the function verify
-    read p_name p_contenp p_checksum p_encrypted p_signed < < (verify "$path")
-    if [ "$p_name" = "$t_name" ] && [ "$p_content" = "$t_content" ] && [ "$p_checksum" = "$t_checksum" ] && [ "$p_encrypted" = "$t_encrypted" ] && [ "$p_signed" = "$t_signed" ]; then
-        echo "Treasure found!"
-        break
+declare -a verify_result
+    if verify "$path" verify_result; then
+        p_name="${verify_result[0]}"
+        p_content="${verify_result[1]}"
+        p_checksum="${verify_result[2]}"
+        p_encrypted="${verify_result[3]}"
+        p_signed="${verify_result[4]}"
+
+        if [ "$p_name" = "$t_name" ] && 
+        [ "$p_content" = "$t_content" ] && \
+        [ "$p_checksum" = "$t_checksum" ] && \
+        [ "$p_encrypted" = "$t_encrypted" ] && \
+        [ "$p_signed" = "$t_signed" ]; then
+            echo "Treasure found!"
+            break
+        fi
     else
         echo "Not the treasure path. Try again."
     fi
