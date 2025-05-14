@@ -16,13 +16,27 @@ random_number() {
 }
 
 place_treasure() {
+
+    shopt -s nullglob
     local -n out_array=$1  # Reference to caller's array
 
     cd board || return 1
 
     recursive_place() {
-        txt_files=(*.txt)
-        if [ ${#txt_files[@]} -gt 0 ]; then
+        # Check if there are no subdirectories
+        directories=(*/)
+        test=()
+        echo "Directories found: ${#directories[@]}"
+        echo "content: ${#test[@]}"
+        if [ ${#directories[@]} -eq 0 ]; then
+            # Get .txt files in this leaf directory
+            txt_files=(*.txt)
+            if [ ${#txt_files[@]} -eq 0 ] || [ "${txt_files[0]}" = "*.txt" ]; then
+                echo "No .txt files in $(pwd), skipping."
+                return 1
+            fi
+
+            # Randomly select one .txt file
             random_index=$((RANDOM % ${#txt_files[@]}))
             selected_file="${txt_files[$random_index]}"
 
@@ -37,41 +51,25 @@ place_treasure() {
             # c) Checksum
             checksum=$(sha256sum "$selected_file" | awk '{print $1}')
 
-            # d) Encrypt
-            passphrase=$(openssl rand -base64 16)
-            openssl enc -aes-256-cbc -salt -in "$selected_file" -out "${selected_file}.enc" -pass pass:"$passphrase"
-            mv "${selected_file}.enc" "$selected_file"
+            # d) Sign
+            gpg --default-key F6AD6E517CD8C16A66884788F0F46513D3A233CE --output "${selected_file}.sig" --detach-sign "$selected_file"
+            signature=$(base64 "${selected_file}.sig")
+            rm -f "${selected_file}.sig"
 
-            # e) Sign
-            key_name="key_$(date +%s)"
-            gpg --batch --gen-key <<EOF
-Key-Type: default
-Key-Length: 2048
-Name-Real: TreasureSigner
-Name-Email: signer@example.com
-Expire-Date: 0
-%no-protection
-%commit
-EOF
+            # e) Print the full path of the treasure
+            echo "Treasure placed in: $(pwd)/$selected_file"
 
-            key_fpr=$(gpg --list-keys --with-colons | grep '^fpr' | head -n1 | cut -d: -f10)
-
-            gpg --default-key "$key_fpr" --output "${selected_file}.gpg" --sign "$selected_file"
-            mv "${selected_file}.gpg" "$selected_file"
-            pubkey=$(gpg --armor --export "$key_fpr")
-
-            # Assign to output array
+            # f) Assign output
             out_array=(
                 "$name"
                 "$content"
                 "$checksum"
-                "$passphrase"
-                "$pubkey"
+                "$signature"
             )
-            return
+            return 0
         fi
 
-        # Recurse
+        # Recurse into a random subdirectory
         subdirs=()
         for dir in */; do
             [ -d "$dir" ] && subdirs+=("$dir")
@@ -83,18 +81,28 @@ EOF
         fi
 
         random_index=$((RANDOM % ${#subdirs[@]}))
-        cd "${subdirs[$random_index]}" || return
+        selected_subdir="${subdirs[$random_index]}"
+        echo "Entering subdirectory: $selected_subdir"
+        cd "$selected_subdir" || return
         recursive_place
         cd .. || return
     }
 
     recursive_place
+    cd .. || return
+    shopt -u nullglob
 }
 
 verify() {
     local path=$1
     local -n out_array=$2 
 
+    # Check if the path is a relative or global path
+    if [[ "$path" != /* ]]; then
+        path=$(realpath "board/$path")
+    fi
+
+    # Now check if the resolved path exists
     if [[ ! -f "$path" ]]; then
         echo "Error: File '$path' does not exist." >&2
         return 1
@@ -126,3 +134,4 @@ verify() {
         return 1
     fi
 }
+
