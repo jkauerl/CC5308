@@ -3,11 +3,11 @@
 source ./board.sh
 source ./controller.sh
 
-local name=$1
-local content=$2
-local checksum=$3
-local encrypted=$4
-local signed=$5
+name=$1
+content=$2
+checksum=$3
+encrypted=$4
+signed=$5
 
 if [ -d board ]; then
     clean_board
@@ -15,7 +15,7 @@ if [ -d board ]; then
 fi
 
 echo "Creating board directory..."
-create_board 3 2 4
+create_board 1 2 2
 
 echo "Filling board with random content..."
 fill_board "$name" "$content" "$checksum" "$encrypted" "$signed"
@@ -31,7 +31,7 @@ t_encrypted=${treasure_info[3]}
 t_signed=${treasure_info[4]}
 
 while true; do
-    echo "Please enter a path to validate the treasure:"
+    echo "Please enter a path (board/ is already included) to validate the treasure:"
     read -r path
 declare -a verify_result
     if verify "$path" verify_result; then
