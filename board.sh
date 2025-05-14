@@ -6,9 +6,10 @@ random_text() {
 }
 
 clean_board() {
-    cd board || return
-    rm -rf *
-    cd ..
+    # Remove all the files and directories in the board directory
+    rm -rf board/*
+    # Remove the board directory itself
+    rmdir board
 }
 
 create_board_recursive() {
@@ -19,7 +20,7 @@ create_board_recursive() {
     if [ "$depth" -le 0 ]; then
         local i
         for ((i = 0; i < files; i++)); do
-            touch "file_$i.txt"
+            touch "file$i.txt"
         done
     else
         local i
@@ -61,7 +62,7 @@ fill_board() {
                     sha256sum "$file" > "$file"
                 fi
                 if [ "$encrypted" = true ]; then
-                    openssl enc -aes-256-cbc -salt -in "$file" -out "$file" -k secret
+                    openssl enc -aes-256-cbc -salt -pbkdf2 -in "$file" -out "$file" -k secret
                 fi
                 if [ "$signed" = true ]; then
                     gpg --sign "$file"
