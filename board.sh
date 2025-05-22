@@ -41,11 +41,7 @@ create_board() {
 }
 
 fill_board() {
-    local name=$1
-    local content=$2
-    local checksum=$3
-    local encrypted=$4
-    local signed=$5
+    local mode=$1
     local length=100
 
     fill_recursive() {
@@ -55,23 +51,65 @@ fill_board() {
                 fill_recursive
                 cd ..
             elif [[ "$file" == *.txt ]]; then
-                echo "Filling $file with random content..."
-                random_text "$length" > "$file"
-
-                if [ "$checksum" = true ]; then
-                    sha256sum "$file" > "$file"
-                fi
-                if [ "$encrypted" = true ]; then
-                    openssl enc -aes-256-cbc -salt -pbkdf2 -in "$file" -out "$file" -k secret
-                fi
-                if [ "$signed" = true ]; then
-                    gpg --sign "$file"
-                fi
+                case "$mode" in
+                    name)
+                        : > "$file"   # truncate to empty
+                        ;;
+                    content|checksum|encrypted|signed)
+                        random_text "$length" > "$file"
+                        ;;
+                esac
             fi
         done
     }
 
     cd board || return
+
+    # Generate a temporary GNUPGHOME for key generation if signing
+    if [[ "$mode" == "signed" ]]; then
+        GNUPGHOME=$(mktemp -d)
+        trap 'rm -rf "$GNUPGHOME"' EXIT
+
+                    cat > "$GNUPGHOME/keyparams" <<EOF
+%no-protection
+Key-Type: RSA
+Key-Length: 2048
+Subkey-Type: RSA
+Subkey-Length: 2048
+Name-Real: fill
+Name-Email: fill@example.com
+Expire-Date: 0
+%commit
+EOF
+
+        # Generate key quietly
+        gpg --batch --quiet --homedir "$GNUPGHOME" --generate-key "$GNUPGHOME/keyparams"
+
+        # Get key ID
+        gpg_key=$(gpg --batch --quiet --homedir "$GNUPGHOME" --list-keys --with-colons | awk -F: '$1=="pub"{print $5; exit}')
+    fi
+
     fill_recursive
+
+    shopt -s globstar nullglob
+
+    case "$mode" in
+        encrypted)
+            for file in **/*.txt; do
+                [ -f "$file" ] || continue
+                openssl enc -aes-256-cbc -salt -pbkdf2 -in "$file" -out "${file}.enc" -k "password"
+                mv "${file}.enc" "$file"
+            done
+            ;;
+        signed)
+            for file in **/*.txt; do
+                [ -f "$file" ] || continue
+                gpg --batch --quiet --homedir "$GNUPGHOME" --yes --sign --local-user "$gpg_key" --output "${file}" "$file"
+            done
+            ;;
+    esac
+
+    shopt -u globstar nullglob
+
     cd ..
 }
