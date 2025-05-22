@@ -1,2 +1,5 @@
 board/
 *.pdf
+*.tar
+*.tar*
+*.zip
