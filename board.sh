@@ -12,6 +12,9 @@ clean_board() {
     rmdir board
 }
 
+# Global variable of file counter
+file_counter=0
+
 create_board_recursive() {
     local depth=$1
     local width=$2
@@ -20,7 +23,8 @@ create_board_recursive() {
     if [ "$depth" -le 0 ]; then
         local i
         for ((i = 0; i < files; i++)); do
-            touch "file$i.txt"
+            touch "file$file_counter.txt"
+            file_counter=$((file_counter + 1))
         done
     else
         local i
