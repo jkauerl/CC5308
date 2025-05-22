@@ -16,73 +16,103 @@ random_number() {
 }
 
 place_treasure() {
+    local mode=$1
 
     shopt -s nullglob
-    local -n out_array=$1  # Reference to caller's array
-
     cd board || return 1
 
     recursive_place() {
-        # Check if there are no subdirectories
         directories=(*/)
-        test=()
-        echo "Directories found: ${#directories[@]}"
-        echo "content: ${#test[@]}"
         if [ ${#directories[@]} -eq 0 ]; then
-            # Get .txt files in this leaf directory
+            # Base case: no more directories, check for .txt files
             txt_files=(*.txt)
             if [ ${#txt_files[@]} -eq 0 ] || [ "${txt_files[0]}" = "*.txt" ]; then
-                echo "No .txt files in $(pwd), skipping."
+                echo "No .txt files in $(pwd), skipping." >&2
                 return 1
             fi
 
-            # Randomly select one .txt file
             random_index=$((RANDOM % ${#txt_files[@]}))
             selected_file="${txt_files[$random_index]}"
 
-            echo "Treasure!" >> "$selected_file"
+            # Replace content with "Treasure!" for all modes except encrypted/signed
+            if [[ "$mode" != "encrypted" && "$mode" != "signed" ]]; then
+                echo "Treasure!" > "$selected_file"
+            fi
 
-            # a) Name
-            name="$selected_file"
+            # Prepare output value based on mode
+            case "$mode" in
+                name)
+                    echo "$selected_file"
+                    ;;
+                content)
+                    content=$(<"$selected_file")
+                    echo "$content"
+                    ;;
+                checksum)
+                    checksum=$(sha256sum "$selected_file" | awk '{print $1}')
+                    echo "$checksum"
+                    ;;
+                encrypted)
+                    new_passphrase=$(openssl rand -base64 12)
+                    echo "Treasure!" > "$selected_file"
+                    openssl enc -aes-256-cbc -salt -pbkdf2 -in "$selected_file" -out "${selected_file}.enc" -k "$new_passphrase"
+                    mv "${selected_file}.enc" "$selected_file"
+                    echo "$new_passphrase"
+                    ;;
+                signed)
+                    GNUPGHOME=$(mktemp -d)
+                    trap "rm -rf '$GNUPGHOME'" EXIT
 
-            # b) Content
-            content=$(<"$selected_file")
+                    cat > "$GNUPGHOME/keyparams" <<EOF
+%no-protection
+Key-Type: RSA
+Key-Length: 2048
+Subkey-Type: RSA
+Subkey-Length: 2048
+Name-Real: Treasure Signer
+Name-Email: treasure@example.com
+Expire-Date: 0
+%commit
+EOF
 
-            # c) Checksum
-            checksum=$(sha256sum "$selected_file" | awk '{print $1}')
+                    gpg --batch --quiet --homedir "$GNUPGHOME" --generate-key < "$GNUPGHOME/keyparams"
 
-            # d) Sign
-            gpg --default-key F6AD6E517CD8C16A66884788F0F46513D3A233CE --output "${selected_file}.sig" --detach-sign "$selected_file"
-            signature=$(base64 "${selected_file}.sig")
-            rm -f "${selected_file}.sig"
+                    new_key_id=$(gpg --batch --quiet --homedir "$GNUPGHOME" --list-keys --with-colons | awk -F: '$1 == "pub" {print $5; exit}')
 
-            # e) Print the full path of the treasure
-            echo "Treasure placed in: $(pwd)/$selected_file"
+                    echo "Treasure!" > "$selected_file"
 
-            # f) Assign output
-            out_array=(
-                "$name"
-                "$content"
-                "$checksum"
-                "$signature"
-            )
+                    gpg --batch --quiet --homedir "$GNUPGHOME" --yes \
+                        --local-user "$new_key_id" \
+                        --output "$selected_file" \
+                        --sign "$selected_file"
+
+                    if [[ $? -ne 0 ]]; then
+                        echo "Error: GPG signing failed for $selected_file" >&2
+                        return 1
+                    fi
+
+                    pubkey=$(gpg --batch --quiet --homedir "$GNUPGHOME" --armor --export "$new_key_id")
+                    echo "$pubkey"
+                    ;;
+            esac
+
+            # echo "Treasure placed in: $(pwd)/$selected_file" >&2
             return 0
         fi
 
-        # Recurse into a random subdirectory
+        # Recursive case: go into a random subdirectory
+
+        # Get a list of subdirectories
         subdirs=()
         for dir in */; do
             [ -d "$dir" ] && subdirs+=("$dir")
         done
 
-        if [ ${#subdirs[@]} -eq 0 ]; then
-            echo "No more directories to search." >&2
-            return 1
-        fi
-
+        # Select a random subdirectory
         random_index=$((RANDOM % ${#subdirs[@]}))
         selected_subdir="${subdirs[$random_index]}"
-        echo "Entering subdirectory: $selected_subdir"
+
+        # Cd into the selected subdirectory and call the function recursively
         cd "$selected_subdir" || return
         recursive_place
         cd .. || return
@@ -95,43 +125,76 @@ place_treasure() {
 
 verify() {
     local path=$1
-    local -n out_array=$2 
+    local mode=$2
+    local key=$3
 
-    # Check if the path is a relative or global path
+    # Resolve path relative to board if needed
     if [[ "$path" != /* ]]; then
         path=$(realpath "board/$path")
     fi
 
-    # Now check if the resolved path exists
     if [[ ! -f "$path" ]]; then
         echo "Error: File '$path' does not exist." >&2
         return 1
     fi
 
-    local content
-    content=$(<"$path")
+    echo "Verifying $path with mode $mode"
 
-    if [[ "$content" == *"Treasure!"* ]]; then
-        local p_name="TreasureFound"
-        local p_content="$content"
-        local p_checksum
-        p_checksum=$(md5sum "$path" | awk '{print $1}')
-        local p_encrypted
-        p_encrypted=$(echo "$content" | openssl enc -base64)
-        local p_signed
-        p_signed=$(echo "$content" | openssl dgst -sha256 | awk '{print $2}')
+    case "$mode" in
+        name)
+            local filename
+            filename=$(basename "$path")
+            [[ "$filename" == "$key" ]]
+            return
+            ;;
+        content)
+            local content
+            content=$(<"$path")
+            [[ "$content" == "$key" ]]
+            return
+            ;;
+        checksum)
+            local checksum
+            checksum=$(sha256sum "$path" | awk '{print $1}')
+            [[ "$checksum" == "$key" ]]
+            return
+            ;;
+        encrypted)
+            local tmpfile
+            tmpfile=$(mktemp)
+            if openssl enc -d -aes-256-cbc -salt -pbkdf2 -in "$path" -out "$tmpfile" -k "$key" &>/dev/null; then
+                rm -f "$tmpfile"
+                return 0
+            else
+                rm -f "$tmpfile"
+                return 1
+            fi
+            ;;
+        signed)
+            local GNUPGHOME
+            GNUPGHOME=$(mktemp -d)
 
-        out_array=(
-            "$p_name"
-            "$p_content"
-            "$p_checksum"
-            "$p_encrypted"
-            "$p_signed"
-        )
-        return 0
-    else
-        echo "No treasure found in $path." >&2
-        return 1
-    fi
+            # Import the public key silently
+            echo "$key" | gpg --batch --quiet --homedir "$GNUPGHOME" --import &>/dev/null
+            if [[ $? -ne 0 ]]; then
+                rm -rf "$GNUPGHOME"
+                return 1
+            fi
+
+            # Set key trust silently
+            key_fingerprint=$(gpg --homedir "$GNUPGHOME" --with-colons --list-keys | awk -F: '$1 == "fpr" {print $10; exit}')
+            if [[ -n "$key_fingerprint" ]]; then
+                printf '5\ny\n' | gpg --homedir "$GNUPGHOME" --batch --yes --quiet --command-fd 0 --status-fd 1 --edit-key "$key_fingerprint" trust &>/dev/null
+            fi
+
+            # Verify the signature silently
+            if gpg --batch --quiet --homedir "$GNUPGHOME" --verify "$path" &>/dev/null; then
+                rm -rf "$GNUPGHOME"
+                return 0
+            else
+                rm -rf "$GNUPGHOME"
+                return 1
+            fi
+            ;;
+    esac
 }
-
