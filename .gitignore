@@ -3,3 +3,4 @@ board/
 *.tar
 *.tar*
 *.zip
+*.code-workspace
