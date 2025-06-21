@@ -4,3 +4,4 @@ board/
 *.tar*
 *.zip
 *.code-workspace
+target/
