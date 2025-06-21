@@ -1,5 +1,5 @@
 use nix::sys::wait::waitpid;
-use nix::unistd::{ForkResult, execvp, fork};
+use nix::unistd::{execvp, fork, ForkResult};
 use std::env;
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
@@ -11,8 +11,11 @@ const HISTORY_FILE: &str = ".shell-history";
 
 fn load_history() -> Vec<String> {
     let mut history = Vec::new();
+    // Load history from the file in the user's home directory
     if let Some(mut path) = dirs::home_dir() {
         path.push(HISTORY_FILE);
+
+        // If the file exists, read it line by line and store the commands in a vector
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             for line in reader.lines() {
@@ -26,8 +29,11 @@ fn load_history() -> Vec<String> {
 }
 
 fn append_to_history(line: &str) {
+    // Append the command to the history file in the user's home directory
     if let Some(mut path) = dirs::home_dir() {
         path.push(HISTORY_FILE);
+
+        // Open the file in append mode, creating it if it doesn't exist
         if let Ok(file) = OpenOptions::new().create(true).append(true).open(path) {
             let mut writer = BufWriter::new(file);
             let _ = writeln!(writer, "{}", line);
@@ -42,7 +48,9 @@ fn show_prompt() {
 
 fn read_input() -> Option<String> {
     let mut input = String::new();
+
     match io::stdin().read_line(&mut input) {
+        // Removes the trailing newline character
         Ok(n) if n > 0 => Some(input.trim().to_string()),
         _ => None,
     }
@@ -178,26 +186,34 @@ fn execute_command(cmd: &[&str], history: &Vec<String>) {
 }
 
 fn main() {
+    // Load the command history from the file
     let mut history = load_history();
 
     loop {
+        // Show the prompt and read input from the user
         show_prompt();
 
+        // Read a line of input from the user
         let raw_line = match read_input() {
             Some(line) => line,
+
+            // If input is empty or EOF, exit the loop
             None => {
                 println!();
                 break;
             }
         };
 
+        // If the input is empty, skip to the next iteration
         if raw_line.trim().is_empty() {
             continue;
         }
 
+        // Append the command to the history and store it in the history vector
         append_to_history(&raw_line);
         history.push(raw_line.clone());
 
+        // Substitute environment variables, parse the command, and execute it
         let input = substitute_env_variables(&raw_line);
         let cmd = parse_command(&input);
         execute_command(&cmd, &history);
