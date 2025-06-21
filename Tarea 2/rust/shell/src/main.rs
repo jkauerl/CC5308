@@ -1,5 +1,7 @@
+use nix::sys::wait::waitpid;
+use nix::unistd::{ForkResult, execvp, fork};
+use std::ffi::CString;
 use std::io::{self, Write};
-use std::process::{Command, Stdio};
 
 fn show_prompt() {
     print!("mi-rust-shell-prompt> ");
@@ -23,19 +25,36 @@ fn execute_command(cmd: &[&str]) {
         return;
     }
 
-    let child = Command::new(cmd[0])
-        .args(&cmd[1..])
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn();
+    // Convert the command to a CString
+    let cmd_c = match CString::new(cmd[0]) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("Comando inválido");
+            return;
+        }
+    };
 
-    match child {
-        Ok(mut child_proc) => {
-            let _ = child_proc.wait();
+    let args_c: Vec<CString> = cmd
+        .iter()
+        .filter_map(|&arg| CString::new(arg).ok())
+        .collect();
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            // In the child process: execute the command
+            let result = execvp(&cmd_c, &args_c);
+            if result.is_err() {
+                let e = result.unwrap_err();
+                eprintln!("Error al ejecutar '{}': {}", cmd[0], e);
+                std::process::exit(1); // Salida con error si exec falla
+            }
+        }
+        Ok(ForkResult::Parent { child }) => {
+            // In the parent process: wait for the child to finish
+            let _ = waitpid(child, None);
         }
         Err(e) => {
-            eprintln!("Error al ejecutar '{}': {}", cmd[0], e);
+            eprintln!("Error al hacer fork: {}", e);
         }
     }
 }
