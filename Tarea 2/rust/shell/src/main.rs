@@ -2,8 +2,38 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{ForkResult, execvp, fork};
 use std::env;
 use std::ffi::CString;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::process;
+
+const HISTORY_FILE: &str = ".shell-history";
+
+fn load_history() -> Vec<String> {
+    let mut history = Vec::new();
+    if let Some(mut path) = dirs::home_dir() {
+        path.push(HISTORY_FILE);
+        if let Ok(file) = File::open(path) {
+            let reader = BufReader::new(file);
+            for line in reader.lines() {
+                if let Ok(cmd) = line {
+                    history.push(cmd);
+                }
+            }
+        }
+    }
+    history
+}
+
+fn append_to_history(line: &str) {
+    if let Some(mut path) = dirs::home_dir() {
+        path.push(HISTORY_FILE);
+        if let Ok(file) = OpenOptions::new().create(true).append(true).open(path) {
+            let mut writer = BufWriter::new(file);
+            let _ = writeln!(writer, "{}", line);
+        }
+    }
+}
 
 fn show_prompt() {
     print!("mi-rust-shell-prompt> ");
@@ -16,6 +46,36 @@ fn read_input() -> Option<String> {
         Ok(n) if n > 0 => Some(input.trim().to_string()),
         _ => None,
     }
+}
+
+fn substitute_env_variables(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '$' {
+            let mut var_name = String::new();
+            while let Some(&next) = chars.peek() {
+                if next.is_alphanumeric() || next == '_' {
+                    var_name.push(next);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if let Ok(val) = env::var(&var_name) {
+                result.push_str(&val);
+            } else {
+                // If the variable is not found, just keep "$NAME"
+                result.push('$');
+                result.push_str(&var_name);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 fn parse_command(input: &str) -> Vec<&str> {
@@ -118,11 +178,12 @@ fn execute_command(cmd: &[&str], history: &Vec<String>) {
 }
 
 fn main() {
-    let mut history = Vec::new();
+    let mut history = load_history();
 
     loop {
         show_prompt();
-        let input = match read_input() {
+
+        let raw_line = match read_input() {
             Some(line) => line,
             None => {
                 println!();
@@ -130,12 +191,14 @@ fn main() {
             }
         };
 
-        if input.trim().is_empty() {
+        if raw_line.trim().is_empty() {
             continue;
         }
 
-        history.push(input.clone());
+        append_to_history(&raw_line);
+        history.push(raw_line.clone());
 
+        let input = substitute_env_variables(&raw_line);
         let cmd = parse_command(&input);
         execute_command(&cmd, &history);
     }
