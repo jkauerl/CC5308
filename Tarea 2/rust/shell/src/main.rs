@@ -27,6 +27,7 @@ fn execute_command(cmd: &[&str], history: &Vec<String>) {
         return;
     }
 
+    // Using match to handle build-in commands and later on execute external commands
     match cmd[0] {
         "cd" => {
             let home = env::var("HOME").unwrap_or_else(|_| "/".to_string());
